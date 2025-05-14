@@ -44,3 +44,16 @@ async def buscar_compuestos(
     print(f"⏳ Tiempo total de ejecución: {total_time:.2f} segundos")
 
     return resultados
+
+@app.get("/buscar_massbank_picos", response_model=List[Compound])
+async def buscar_por_picos(
+    peak_list: str = Query(..., description="Formato: m/z;intensidad separados por coma"),
+    threshold: float = Query(0.01, description="Umbral de coincidencia para comparación de espectros")
+):
+    """
+    Búsqueda de compuestos en MassBank usando una lista de picos.
+    Ejemplo: 56.04;10,69.04;42,83.06;51,...
+    """
+    resultados = await massbank.search_massbank_by_peaks(peak_list, threshold)
+    print(f"🔍 Resultados de MassBank por picos: {len(resultados)} encontrados")
+    return resultados
