@@ -85,6 +85,8 @@ async def search_massbank_by_peaks(peak_list: str, threshold: float = 0.01) -> L
 
             if not accessions:
                 return []
+            
+            accessions = accessions[:100]
 
             tasks = [
                 _fetch_massbank_detail(client, acc, semaphore)
