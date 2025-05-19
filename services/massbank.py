@@ -11,7 +11,7 @@ HEADERS = {
 }
 
 # Límite de concurrencia (ajusta según pruebas, p. ej. 5–10)
-MAX_CONCURRENT_REQUESTS = 10
+MAX_CONCURRENT_REQUESTS = 5
 
 async def search_massbank(name: Optional[str], formula: Optional[str], weight: Optional[float]) -> List[Compound]:
     params = {}

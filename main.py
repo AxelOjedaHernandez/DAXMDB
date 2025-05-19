@@ -22,6 +22,13 @@ async def buscar_compuestos(
     formula: Optional[str] = Query(None),
     peso: Optional[float] = Query(None)
 ):
+    """
+    Busca simultáneamente en:
+      • PubChem  (nombre, fórmula, masa)
+      • MassBank (nombre, fórmula, masa)
+      • HMDB     (nombre, fórmula) — requiere API_KEY
+    """
+
     start_time = time.perf_counter()  # ⏱️ Inicia el contador
 
     resultados = []
@@ -32,12 +39,12 @@ async def buscar_compuestos(
     massbank_result = await massbank.search_massbank(nombre, formula, peso)
     print(f"🔍 Resultados de MassBank ({len(massbank_result)})")
 
-    # hmdb_result = await hmdb.search_hmdb(nombre, formula, peso)
-    # print(f"🔍 Resultados de HMDB ({len(hmdb_result)}): {hmdb_result}")
+    hmdb_result = await hmdb.search_hmdb(nombre, formula)
+    print(f"🔍 Resultados de HMDB ({len(hmdb_result)}): {hmdb_result}")
 
     resultados.extend(pubchem_result)
     resultados.extend(massbank_result)
-    #resultados.extend(hmdb_result)
+    resultados.extend(hmdb_result)
 
     end_time = time.perf_counter()  # ⏱️ Finaliza el contador
     total_time = end_time - start_time

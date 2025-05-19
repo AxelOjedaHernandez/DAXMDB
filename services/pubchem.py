@@ -10,7 +10,7 @@ HEADERS = {
     "User-Agent": "MiAppPubChem/1.0 (+https://fronter-fincher.vercel.app)"
 }
 
-MAX_CONCURRENT_REQUESTS = 10
+MAX_CONCURRENT_REQUESTS = 5
 
 def normalize_formula(formula: str) -> str:
     """Elimina espacios y normaliza la fórmula molecular."""
