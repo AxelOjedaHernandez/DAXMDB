@@ -6,6 +6,12 @@ from models.compound import Compound
 
 BASE_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 
+HEADERS = {
+    "User-Agent": "MiAppPubChem/1.0 (+https://fronter-fincher.vercel.app)"
+}
+
+MAX_CONCURRENT_REQUESTS = 10
+
 def normalize_formula(formula: str) -> str:
     """Elimina espacios y normaliza la fórmula molecular."""
     return re.sub(r"\s+", "", formula.strip())
@@ -28,22 +34,23 @@ async def resolve_listkey(client: httpx.AsyncClient, listkey_url: str, delay: in
 
     return {"IdentifierList": {"CID": []}}
 
-async def fetch_pubchem_details(client: httpx.AsyncClient, cid: str) -> Optional[Compound]:
-    """Obtiene detalles de un compuesto desde PubChem por su CID."""
-    url = f"{BASE_URL}/compound/cid/{cid}/property/MolecularFormula,MolecularWeight,IUPACName/JSON"
-    try:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        data = resp.json()
-        props = data.get("PropertyTable", {}).get("Properties", [{}])[0]
-        return Compound(
-            name=props.get("IUPACName", "No disponible"),
-            formula=props.get("MolecularFormula", "Desconocida"),
-            weight=props.get("MolecularWeight", 0.0),
-            url=f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"
-        )
-    except Exception:
-        return None
+async def fetch_pubchem_details(client: httpx.AsyncClient, cid: str,  semaphore: asyncio.Semaphore) -> Optional[Compound]:
+    async with semaphore:
+        """Obtiene detalles de un compuesto desde PubChem por su CID."""
+        url = f"{BASE_URL}/compound/cid/{cid}/property/MolecularFormula,MolecularWeight,IUPACName/JSON"
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            props = data.get("PropertyTable", {}).get("Properties", [{}])[0]
+            return Compound(
+                name=props.get("IUPACName", "No disponible"),
+                formula=props.get("MolecularFormula", "Desconocida"),
+                weight=props.get("MolecularWeight", 0.0),
+                url=f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"
+            )
+        except Exception:
+            return None
 
 async def search_pubchem(name: Optional[str] = None, formula: Optional[str] = None, weight: Optional[float] = None) -> List[Compound]:
     urls = []
@@ -64,24 +71,25 @@ async def search_pubchem(name: Optional[str] = None, formula: Optional[str] = No
     if not urls:
         return []
 
-    async with httpx.AsyncClient() as client:
-        search_results = await asyncio.gather(*(client.get(url) for url in urls))
-        cid_sets = []
+    timeout = httpx.Timeout(30.0)  # ajusta si necesitas más
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
+    async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as client:
+        # 1. Lanzar búsquedas en paralelo
+        search_tasks = [client.get(url) for url in urls]
+        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+        cid_sets = []
         for resp in search_results:
-            cids = []
-            if resp.status_code == 200 or 202:
+            if isinstance(resp, Exception):
+                continue
+            if resp.status_code in (200, 202):
                 data = resp.json()
                 if "Waiting" in data and "ListKey" in data["Waiting"]:
                     listkey = data["Waiting"]["ListKey"]
-                    listkey_url = f"{BASE_URL}/compound/listkey/{listkey}/cids/JSON"
-                    data = await resolve_listkey(client, listkey_url)
-                cids = data.get("IdentifierList", {}).get("CID", [])
-            cid_sets.append(set(cids))
+                    data = await resolve_listkey(client, f"{BASE_URL}/compound/listkey/{listkey}/cids/JSON")
+                cid_sets.append(set(data.get("IdentifierList", {}).get("CID", [])))
 
-        print(f"🔎 CIDs encontrados por criterio: {[len(s) for s in cid_sets]}")
-
-        # Elimina sets vacíos
         cid_sets = [s for s in cid_sets if s]
         if not cid_sets:
             return []
@@ -90,8 +98,12 @@ async def search_pubchem(name: Optional[str] = None, formula: Optional[str] = No
         if not common_cids:
             return []
 
-        details_tasks = [fetch_pubchem_details(client, str(cid)) for cid in common_cids]
-        details = await asyncio.gather(*details_tasks)
+        # 2. Obtener detalles con concurrencia controlada
+        detail_tasks = [
+            fetch_pubchem_details(client, str(cid), semaphore)
+            for cid in common_cids
+        ]
+        details = await asyncio.gather(*detail_tasks)
 
     return [c for c in details if c]
 

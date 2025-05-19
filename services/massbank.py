@@ -6,6 +6,10 @@ from models.compound import Compound
 
 BASE_URL = "https://msbi.ipb-halle.de/MassBank-api/records"
 
+HEADERS = {
+    "User-Agent": "MiAppPubChem/1.0 (+https://fronter-fincher.vercel.app)"
+}
+
 # Límite de concurrencia (ajusta según pruebas, p. ej. 5–10)
 MAX_CONCURRENT_REQUESTS = 10
 
@@ -67,7 +71,7 @@ async def search_massbank_by_peaks(peak_list: str, threshold: float = 0.01) -> L
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as client:
         try:
             resp = await client.get(full_url)
             resp.raise_for_status()
@@ -89,6 +93,10 @@ async def search_massbank_by_peaks(peak_list: str, threshold: float = 0.01) -> L
             results = await asyncio.gather(*tasks)
             return [c for c in results if c]
 
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error ({e.response.status_code}): {e.response.text}")
+            return []
+        
         except httpx.RequestError as e:
             print(f"❌ Error consultando MassBank: {e}")
             return []
